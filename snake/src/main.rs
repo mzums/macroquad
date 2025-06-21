@@ -1,6 +1,7 @@
 use macroquad::prelude::*;
 use std::{thread, time};
 use std::collections::VecDeque;
+use std::fs;
 
 const GRID_SIZE: usize = 15;
 const CELL_SIZE: f32 = 40.0;
@@ -16,7 +17,6 @@ impl Snake {
     fn new() -> Self {
         let mut history = VecDeque::new();
         history.push_back((0, 0));
-        //history.push_back((0, 1));
         Snake {
             grid_x: 0,
             grid_y: 1,
@@ -35,7 +35,7 @@ impl Snake {
         }
     }
 
-    fn move_snake(&mut self, dx: isize, dy: isize, award_pos: (usize, usize)) -> bool {
+    fn move_snake(&mut self, dx: isize, dy: isize, award_pos: (usize, usize)) -> (bool, bool) {
         let new_x = self.grid_x as isize + dx;
         let new_y = self.grid_y as isize + dy;
         
@@ -45,15 +45,21 @@ impl Snake {
         if new_y >= 0 && new_y < GRID_SIZE as isize {
             self.grid_y = new_y as usize;
         }
+        if self.history.contains(&(new_x as usize, new_y as usize)) {
+            return (false, true);
+        }
         if new_x >= 0 && new_x < GRID_SIZE as isize && new_y >= 0 && new_y < GRID_SIZE as isize {
             self.history.push_back((new_x as usize, new_y as usize));
         }
+        else {
+            return (false, true)
+        }
         if award_pos.0 == self.grid_x && award_pos.1 == self.grid_y {
-            return true;
+            return (true, false);
         }
         else {
             self.history.pop_front();
-            return false;
+            return (false, false);
         }
         
     }
@@ -136,44 +142,88 @@ fn draw_award(award_pos: (usize, usize)) {
     draw_rectangle(x, y, CELL_SIZE, CELL_SIZE, GREEN);
 }
 
+fn save_high_score(score: i32) -> std::io::Result<()> {
+    fs::write("highscore.txt", score.to_string())
+}
+
 #[macroquad::main("Snake")]
 async fn main() {
     let mut snake = Snake::new();
     let mut award_pos = place_award(&snake);
     let mut score = 0;
-    let mut intersects = false;
+    let mut intersects: bool;
+    let mut wall: bool;
+    let mut direction = (1, 0);
+    let mut game_over = false;
+
+    let mut high_score = fs::read_to_string("highscore.txt")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
     
     loop {
-        if is_key_down(KeyCode::Up) {
-            intersects = snake.move_snake(0, -1, award_pos);
-            thread::sleep(time::Duration::from_millis(150));
-        }
-        if is_key_down(KeyCode::Down) {
-            intersects = snake.move_snake(0, 1, award_pos);
-            thread::sleep(time::Duration::from_millis(150));
-        }
-        if is_key_down(KeyCode::Left) {
-            intersects = snake.move_snake(-1, 0, award_pos);
-            thread::sleep(time::Duration::from_millis(150));
-        }
-        if is_key_down(KeyCode::Right) {
-            intersects = snake.move_snake(1, 0, award_pos);
-            thread::sleep(time::Duration::from_millis(150));
-        }
-        if intersects {
-            award_pos = place_award(&snake);
-            score += 1;
-            intersects = false;
-        }
+        if !game_over {
+            if is_key_down(KeyCode::Up) && direction != (0, 1) {
+                direction = (0, -1);
+                (intersects, wall) = snake.move_snake(direction.0, direction.1, award_pos);
+                thread::sleep(time::Duration::from_millis(150));
+            }
+            else if is_key_down(KeyCode::Down) && direction != (0, -1){
+                direction = (0, 1);
+                (intersects, wall) = snake.move_snake(direction.0, direction.1, award_pos);
+                thread::sleep(time::Duration::from_millis(150));
+            }
+            else if is_key_down(KeyCode::Left) && direction != (1, 0) {
+                direction = (-1, 0);
+                (intersects, wall) = snake.move_snake(direction.0, direction.1, award_pos);
+                thread::sleep(time::Duration::from_millis(150));
+            }
+            else if is_key_down(KeyCode::Right) && direction != (-1, 0) {
+                direction = (1, 0);
+                (intersects, wall) = snake.move_snake(direction.0, direction.1, award_pos);
+                thread::sleep(time::Duration::from_millis(150));
+            }
+            else {
+                (intersects, wall) = snake.move_snake(direction.0, direction.1, award_pos);
+                thread::sleep(time::Duration::from_millis(150));
+            }
+            if intersects {
+                award_pos = place_award(&snake);
+                score += 1;
+            }
+            if wall {
+                game_over = true;
+            }
+            clear_background(Color::from_rgba(20, 20, 35, 255));
         
-        clear_background(Color::from_rgba(20, 20, 35, 255));
-        
-        draw_grid();
-        snake.draw();
-        draw_instructions();
-        draw_award(award_pos);
-        
-        draw_title("SNAKE", 50.0, BLUE);
+            draw_grid();
+            snake.draw();
+            draw_instructions();
+            draw_award(award_pos);
+    
+            draw_text(&format!("Score: {}", score), 20.0, 30.0, 30.0, WHITE);
+            draw_text(&format!("High Score: {}", high_score), 20.0, 60.0, 30.0, WHITE);
+            
+            draw_title("SNAKE", 50.0, BLUE);
+        }
+        else {
+            draw_text("GAME OVER", screen_width()/2.0 - 100.0, screen_height()/2.0 - 30.0, 50.0, RED);
+            draw_text("Press SPACE to restart", screen_width()/2.0 - 150.0, screen_height()/2.0 + 30.0, 30.0, WHITE);
+            
+            if score > high_score {
+                if let Err(e) = save_high_score(score) {
+                    eprintln!("High score save failed: {}", e);
+                }
+                high_score = score;
+            }
+
+            if is_key_down(KeyCode::Space) {
+                game_over = false;
+                snake = Snake::new();
+                direction = (1, 0);
+                score = 0;
+            }
+        }
         
         next_frame().await
     }
