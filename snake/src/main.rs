@@ -1,33 +1,41 @@
 use macroquad::prelude::*;
 use std::{thread, time};
+use std::collections::VecDeque;
 
-const GRID_SIZE: usize = 10;
-const CELL_SIZE: f32 = 60.0;
+const GRID_SIZE: usize = 15;
+const CELL_SIZE: f32 = 40.0;
 const GRID_SIDE: f32 = GRID_SIZE as f32 * CELL_SIZE;
 
-struct Player {
+struct Snake {
     grid_x: usize,
     grid_y: usize,
+    history: VecDeque<(usize, usize)>,
 }
 
-impl Player {
+impl Snake {
     fn new() -> Self {
-        Player {
+        let mut history = VecDeque::new();
+        history.push_back((0, 0));
+        //history.push_back((0, 1));
+        Snake {
             grid_x: 0,
-            grid_y: 0,
+            grid_y: 1,
+            history,
         }
     }
 
     fn draw(&self) {
         let margin_w = (screen_width() - GRID_SIDE) / 2.0;
         let margin_h = (screen_height() - GRID_SIDE) / 2.0;
-        let x = margin_w + self.grid_x as f32 * CELL_SIZE + CELL_SIZE / 2.0;
-        let y = margin_h + self.grid_y as f32 * CELL_SIZE + CELL_SIZE / 2.0;
-        draw_circle(x, y, CELL_SIZE / 3.0, BLUE);
-        draw_circle(x - 5.0, y - 5.0, CELL_SIZE / 6.0, BLUE);
+        
+        for (grid_x, grid_y) in &self.history {
+            let x = margin_w + *grid_x as f32 * CELL_SIZE;
+            let y = margin_h + *grid_y as f32 * CELL_SIZE;
+            draw_rectangle(x, y, CELL_SIZE, CELL_SIZE, RED);
+        }
     }
 
-    fn move_player(&mut self, dx: isize, dy: isize) {
+    fn move_snake(&mut self, dx: isize, dy: isize, award_pos: (usize, usize)) -> bool {
         let new_x = self.grid_x as isize + dx;
         let new_y = self.grid_y as isize + dy;
         
@@ -37,6 +45,17 @@ impl Player {
         if new_y >= 0 && new_y < GRID_SIZE as isize {
             self.grid_y = new_y as usize;
         }
+        if new_x >= 0 && new_x < GRID_SIZE as isize && new_y >= 0 && new_y < GRID_SIZE as isize {
+            self.history.push_back((new_x as usize, new_y as usize));
+        }
+        if award_pos.0 == self.grid_x && award_pos.1 == self.grid_y {
+            return true;
+        }
+        else {
+            self.history.pop_front();
+            return false;
+        }
+        
     }
 }
 
@@ -95,33 +114,64 @@ fn draw_title(text: &str, font_size: f32, color: Color) {
     draw_text(text, x, y, font_size, color);
 }
 
-#[macroquad::main("Grid Movement Game")]
+fn place_award(snake: &Snake) -> (usize, usize) {
+    let snake_pos = &snake.history;
+    
+    loop {
+        let x = rand::gen_range(0, GRID_SIZE);
+        let y = rand::gen_range(0, GRID_SIZE);
+        
+        if !snake_pos.contains(&(x, y)) {
+            return (x, y);
+        }
+    }
+}
+
+fn draw_award(award_pos: (usize, usize)) {
+    let margin_w = (screen_width() - GRID_SIDE) / 2.0;
+    let margin_h = (screen_height() - GRID_SIDE) / 2.0;
+    
+    let x = margin_w + award_pos.0 as f32 * CELL_SIZE;
+    let y = margin_h + award_pos.1 as f32 * CELL_SIZE;
+    draw_rectangle(x, y, CELL_SIZE, CELL_SIZE, GREEN);
+}
+
+#[macroquad::main("Snake")]
 async fn main() {
-    let mut player = Player::new();
+    let mut snake = Snake::new();
+    let mut award_pos = place_award(&snake);
+    let mut score = 0;
+    let mut intersects = false;
     
     loop {
         if is_key_down(KeyCode::Up) {
-            player.move_player(0, -1);
+            intersects = snake.move_snake(0, -1, award_pos);
             thread::sleep(time::Duration::from_millis(150));
         }
         if is_key_down(KeyCode::Down) {
-            player.move_player(0, 1);
+            intersects = snake.move_snake(0, 1, award_pos);
             thread::sleep(time::Duration::from_millis(150));
         }
         if is_key_down(KeyCode::Left) {
-            player.move_player(-1, 0);
+            intersects = snake.move_snake(-1, 0, award_pos);
             thread::sleep(time::Duration::from_millis(150));
         }
         if is_key_down(KeyCode::Right) {
-            player.move_player(1, 0);
+            intersects = snake.move_snake(1, 0, award_pos);
             thread::sleep(time::Duration::from_millis(150));
+        }
+        if intersects {
+            award_pos = place_award(&snake);
+            score += 1;
+            intersects = false;
         }
         
         clear_background(Color::from_rgba(20, 20, 35, 255));
         
         draw_grid();
-        player.draw();
+        snake.draw();
         draw_instructions();
+        draw_award(award_pos);
         
         draw_title("SNAKE", 50.0, BLUE);
         
