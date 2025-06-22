@@ -1,0 +1,11 @@
+[package]
+name = "gui_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = "4.5.40"
+macroquad = "0.4.14"
+
+[target.'cfg(windows)'.dependencies]
+macroquad = "0.4"
