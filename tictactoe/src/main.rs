@@ -4,6 +4,7 @@ const BOARD_SIZE: usize = 3;
 const CELL_SIZE: f32 = 150.0;
 const BOARD_PADDING: f32 = 50.0;
 const LINE_THICKNESS: f32 = 5.0;
+const STATUS_HEIGHT: f32 = 60.0;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Player {
@@ -17,9 +18,16 @@ enum CellState {
     Occupied(Player),
 }
 
+enum GameState {
+    Playing,
+    Win(Player),
+    Draw,
+}
+
 struct Game {
     board: [[CellState; BOARD_SIZE]; BOARD_SIZE],
     current_player: Player,
+    game_state: GameState,
 }
 
 impl Game {
@@ -27,17 +35,69 @@ impl Game {
         Self {
             board: [[CellState::Empty; BOARD_SIZE]; BOARD_SIZE],
             current_player: Player::X,
+            game_state: GameState::Playing,
         }
     }
 
     fn make_move(&mut self, row: usize, col: usize) {
-        if let CellState::Empty = self.board[row][col] {
-            self.board[row][col] = CellState::Occupied(self.current_player);
-            self.current_player = match self.current_player {
-                Player::X => Player::O,
-                Player::O => Player::X,
-            };
+        if let GameState::Playing = self.game_state {
+            if let CellState::Empty = self.board[row][col] {
+                self.board[row][col] = CellState::Occupied(self.current_player);
+                self.check_winner();
+                self.current_player = match self.current_player {
+                    Player::X => Player::O,
+                    Player::O => Player::X,
+                };
+            }
         }
+    }
+
+    fn check_winner(&mut self) {
+        for row in 0..BOARD_SIZE {
+            if self.board[row][0] == self.board[row][1] && 
+               self.board[row][1] == self.board[row][2] {
+                if let CellState::Occupied(p) = self.board[row][0] {
+                    self.game_state = GameState::Win(p);
+                    return;
+                }
+            }
+        }
+
+        for col in 0..BOARD_SIZE {
+            if self.board[0][col] == self.board[1][col] && 
+               self.board[1][col] == self.board[2][col] {
+                if let CellState::Occupied(p) = self.board[0][col] {
+                    self.game_state = GameState::Win(p);
+                    return;
+                }
+            }
+        }
+
+        if self.board[0][0] == self.board[1][1] && 
+           self.board[1][1] == self.board[2][2] {
+            if let CellState::Occupied(p) = self.board[1][1] {
+                self.game_state = GameState::Win(p);
+                return;
+            }
+        }
+
+        if self.board[0][2] == self.board[1][1] && 
+           self.board[1][1] == self.board[2][0] {
+            if let CellState::Occupied(p) = self.board[1][1] {
+                self.game_state = GameState::Win(p);
+                return;
+            }
+        }
+
+        if self.board.iter().flatten().all(|&cell| {
+            !matches!(cell, CellState::Empty)
+        }) {
+            self.game_state = GameState::Draw;
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = Game::new();
     }
 }
 
@@ -45,7 +105,7 @@ fn window_conf() -> Conf {
     Conf {
         window_title: "Tic Tac Toe".to_owned(),
         window_width: (CELL_SIZE * BOARD_SIZE as f32 + BOARD_PADDING * 2.0) as i32,
-        window_height: (CELL_SIZE * BOARD_SIZE as f32 + BOARD_PADDING * 2.0) as i32,
+        window_height: (CELL_SIZE * BOARD_SIZE as f32 + BOARD_PADDING * 2.0 + STATUS_HEIGHT) as i32,
         ..Default::default()
     }
 }
@@ -76,25 +136,48 @@ async fn main() {
                 
                 match game.board[row][col] {
                     CellState::Occupied(Player::X) => {
-                        draw_line(x + 20.0, y + 20.0, x + CELL_SIZE - 20.0, y + CELL_SIZE - 20.0, 8.0, BLUE);
-                        draw_line(x + CELL_SIZE - 20.0, y + 20.0, x + 20.0, y + CELL_SIZE - 20.0, 8.0, BLUE);
+                        draw_line(x + 20.0, y + 20.0, x + CELL_SIZE - 20.0, y + CELL_SIZE - 20.0, 10.0, BLUE);
+                        draw_line(x + CELL_SIZE - 20.0, y + 20.0, x + 20.0, y + CELL_SIZE - 20.0, 10.0, BLUE);
                     }
                     CellState::Occupied(Player::O) => {
-                        draw_circle_lines(x + CELL_SIZE / 2.0, y + CELL_SIZE / 2.0, CELL_SIZE / 3.0, 8.0, RED);
+                        draw_circle_lines(x + CELL_SIZE / 2.0, y + CELL_SIZE / 2.0, CELL_SIZE / 3.0, 10.0, RED);
                     }
                     CellState::Empty => {}
                 }
             }
         }
 
-        let status = format!(
-            "Player: {}",
-            match game.current_player {
-                Player::X => "X (Blue)",
-                Player::O => "O (Red)",
-            }
+        let status = match game.game_state {
+            GameState::Playing => format!(
+                "Player: {}",
+                match game.current_player {
+                    Player::X => "X (Blue)",
+                    Player::O => "O (Red)",
+                }
+            ),
+            GameState::Win(player) => format!(
+                "Player {} wins!",
+                match player {
+                    Player::X => "X (Blue)",
+                    Player::O => "O (Red)",
+                }
+            ),
+            GameState::Draw => "Draw!".to_string(),
+        };
+
+        let status_color = match game.game_state {
+            GameState::Win(Player::X) => BLUE,
+            GameState::Win(Player::O) => RED,
+            _ => DARKGRAY,
+        };
+
+        draw_text(
+            &status,
+            board_start_x,
+            board_start_y + board_width + 40.0,
+            40.0,
+            status_color,
         );
-        draw_text(&status, 20.0, 20.0, 30.0, DARKGRAY);
 
         if is_mouse_button_pressed(MouseButton::Left) {
             let (mouse_x, mouse_y) = mouse_position();
@@ -106,6 +189,10 @@ async fn main() {
                     game.make_move(row, col);
                 }
             }
+        }
+
+        if is_key_pressed(KeyCode::Space) {
+            game.reset();
         }
 
         next_frame().await;
